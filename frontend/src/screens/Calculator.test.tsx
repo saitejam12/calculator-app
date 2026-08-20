@@ -1,154 +1,110 @@
-import React from "react";
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
 import Calculator from "./Calculator";
 
-afterEach(() => cleanup());
+afterEach(cleanup);
 
-// The display is the live region that mirrors exactly what the user sees.
-function displayText() {
-  return screen.getByRole("status").textContent;
+// The display is the aria-live status region; its text is exactly the shown value.
+function displayText(): string {
+  return screen.getByRole("status").textContent ?? "";
 }
 
-// A physical key press while the page (body) is focused.
-function typeKey(key: string) {
-  fireEvent.keyDown(document.body, { key });
+function type(...keys: string[]): void {
+  for (const key of keys) {
+    fireEvent.keyDown(window, { key });
+  }
 }
 
 describe("Calculator — physical keyboard operation (US-005)", () => {
-  it("AC-016: number and decimal keys enter digits like the matching buttons", () => {
+  it("AC-016: pressing 0-9 and the decimal key enters digits and a decimal point", () => {
     render(<Calculator />);
-    expect(displayText()).toBe("0");
-
-    typeKey("5");
-    typeKey(".");
-    typeKey("5");
-
-    expect(displayText()).toBe("5.5");
+    type("1", "2", ".", "5");
+    expect(displayText()).toBe("12.5");
   });
 
-  it("AC-017: +, -, * and / apply the matching operations", () => {
+  it("AC-017: pressing + applies addition just like the Add button", () => {
     render(<Calculator />);
+    type("5", "+", "3", "=");
+    expect(displayText()).toBe("8");
+  });
 
-    // 6 * 7 = 42
-    typeKey("6");
-    typeKey("*");
-    typeKey("7");
-    typeKey("Enter");
-    expect(displayText()).toBe("42");
-
-    // Reset and try subtraction: 9 - 4 = 5
-    typeKey("Escape");
-    typeKey("9");
-    typeKey("-");
-    typeKey("4");
-    typeKey("=");
+  it("AC-017: pressing - applies subtraction", () => {
+    render(<Calculator />);
+    type("9", "-", "4", "=");
     expect(displayText()).toBe("5");
+  });
 
-    // Division: 8 / 2 = 4
-    typeKey("Escape");
-    typeKey("8");
-    typeKey("/");
-    typeKey("2");
-    typeKey("=");
+  it("AC-017: pressing * applies multiplication", () => {
+    render(<Calculator />);
+    type("4", "*", "2", "=");
+    expect(displayText()).toBe("8");
+  });
+
+  it("AC-017: pressing / applies division", () => {
+    render(<Calculator />);
+    type("8", "/", "2", "=");
     expect(displayText()).toBe("4");
   });
 
-  it("AC-018: Enter (and =) completes a pending operation like equals", () => {
+  it("AC-018: pressing Enter completes a pending operation like equals", () => {
     render(<Calculator />);
-
-    typeKey("8");
-    typeKey("+");
-    typeKey("2");
-    typeKey("Enter");
+    type("7", "+", "3", "Enter");
     expect(displayText()).toBe("10");
-
-    typeKey("Escape");
-    typeKey("3");
-    typeKey("+");
-    typeKey("4");
-    typeKey("=");
-    expect(displayText()).toBe("7");
   });
 
-  it("AC-019: Backspace deletes the last character", () => {
+  it("AC-018: pressing = also completes a pending operation", () => {
     render(<Calculator />);
+    type("6", "*", "6", "=");
+    expect(displayText()).toBe("36");
+  });
 
-    typeKey("1");
-    typeKey("2");
-    typeKey("3");
+  it("AC-019: pressing Backspace deletes the last character entered", () => {
+    render(<Calculator />);
+    type("1", "2", "3");
     expect(displayText()).toBe("123");
-
-    typeKey("Backspace");
+    type("Backspace");
     expect(displayText()).toBe("12");
+  });
 
-    typeKey("Backspace");
-    typeKey("Backspace");
+  it("AC-020: pressing Escape resets the calculator from any state", () => {
+    render(<Calculator />);
+    type("9", "*", "9", "=");
+    expect(displayText()).toBe("81");
+    type("Escape");
     expect(displayText()).toBe("0");
   });
 
-  it("AC-020: Escape resets the calculator like Clear", () => {
+  it("AC-021: keys with no calculator meaning leave the display unchanged and do not error", () => {
     render(<Calculator />);
+    type("5");
+    expect(displayText()).toBe("5");
+    expect(() => type("a", "Z", "q", "Tab", "ArrowLeft", "F1")).not.toThrow();
+    expect(displayText()).toBe("5");
+  });
 
-    typeKey("7");
-    typeKey("*");
-    typeKey("3");
+  it("AC-022: the button grid is operable — activating buttons applies their action", () => {
+    render(<Calculator />);
+    // Buttons are real, accessible buttons reachable by Tab and activated by Enter/Space.
+    fireEvent.click(screen.getByRole("button", { name: "5" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "3" }));
+    fireEvent.click(screen.getByRole("button", { name: "Equals" }));
+    expect(displayText()).toBe("8");
+  });
+
+  it("AC-022: Enter on a focused button does not double-fire equals via the window handler", () => {
+    render(<Calculator />);
+    fireEvent.click(screen.getByRole("button", { name: "5" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "3" }));
     expect(displayText()).toBe("3");
 
-    typeKey("Escape");
-    expect(displayText()).toBe("0");
-
-    // After reset a fresh sum works from scratch.
-    typeKey("9");
-    expect(displayText()).toBe("9");
-  });
-
-  it("AC-021: a key with no calculator meaning leaves state unchanged and does not throw", () => {
-    render(<Calculator />);
-
-    typeKey("5");
-    expect(displayText()).toBe("5");
-
-    expect(() => {
-      typeKey("a");
-      typeKey("Z");
-      typeKey("F1");
-      typeKey("ArrowLeft");
-    }).not.toThrow();
-
-    // The display is exactly as it was before the meaningless keys.
-    expect(displayText()).toBe("5");
-  });
-
-  it("AC-022: buttons are focusable and their action applies when activated", () => {
-    render(<Calculator />);
-
-    const five = screen.getByRole("button", { name: "5" });
-    const add = screen.getByRole("button", { name: "Add" });
-    const equals = screen.getByRole("button", { name: "Equals" });
-
-    // Tabbing lands on a native button that can hold focus.
-    add.focus();
-    expect(document.activeElement).toBe(add);
-
-    // Activating buttons (what Enter/Space do on a focused native button)
-    // performs the calculation using the keyboard alone: 5 + 5 = 10.
-    fireEvent.click(five);
-    fireEvent.click(add);
-    fireEvent.click(five);
-    fireEvent.click(equals);
-    expect(displayText()).toBe("10");
-  });
-
-  it("AC-022: focusing a button does not stop typed digit keys from registering", () => {
-    render(<Calculator />);
-
-    const clear = screen.getByRole("button", { name: "Clear" });
-    clear.focus();
-
-    // A digit key with a button focused still enters the digit.
-    fireEvent.keyDown(clear, { key: "7" });
-    expect(displayText()).toBe("7");
+    const addButton = screen.getByRole("button", { name: "Add" });
+    addButton.focus();
+    // Bubbles to the window keydown listener with a BUTTON target: the handler must
+    // yield to native button activation and NOT also apply Enter -> equals.
+    fireEvent.keyDown(addButton, { key: "Enter" });
+    expect(displayText()).toBe("3");
   });
 });

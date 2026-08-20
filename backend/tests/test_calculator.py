@@ -1,88 +1,110 @@
-import pytest
 from fastapi.testclient import TestClient
 
-from app.auth import encode_token
-from app.config import get_settings
+from app.core.security import create_access_token
 from app.main import app
 
-ENDPOINT = "/api/v1/calculator/entry"
+client = TestClient(app)
+
+ENDPOINT = "/api/v1/calculator/backspace"
 
 
-@pytest.fixture
-def client():
-    return TestClient(app)
-
-
-@pytest.fixture
-def auth_headers():
-    token = encode_token({"sub": "visitor"}, get_settings())
+def _auth_header() -> dict:
+    token = create_access_token({"sub": "visitor"})
     return {"Authorization": f"Bearer {token}"}
 
 
-def _entry(client, headers, display, entering, key):
-    return client.post(
-        ENDPOINT,
-        headers=headers,
-        json={"display": display, "entering": entering, "key": key},
-    )
+def test_ac012_backspace_removes_last_digit_and_keeps_state():
+    payload = {
+        "display": "123",
+        "acc": 10,
+        "op": "+",
+        "entering": True,
+        "error": False,
+    }
+    response = client.post(ENDPOINT, json=payload, headers=_auth_header())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["display"] == "12"
+    # rest of the calculation state is unchanged
+    assert body["acc"] == 10
+    assert body["op"] == "+"
+    assert body["entering"] is True
+    assert body["error"] is False
 
 
-def test_ac008_no_leading_zero_remains(client, auth_headers):
-    first = _entry(client, auth_headers, "0", False, "5")
+def test_ac013_backspace_single_digit_becomes_zero_and_empty():
+    payload = {"display": "7", "acc": None, "op": None, "entering": True, "error": False}
+    response = client.post(ENDPOINT, json=payload, headers=_auth_header())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["display"] == "0"
+    # the entry is treated as empty
+    assert body["entering"] is False
+
+
+def test_ac014_backspace_twice_on_decimal():
+    first_payload = {
+        "display": "4.5",
+        "acc": None,
+        "op": None,
+        "entering": True,
+        "error": False,
+    }
+    first = client.post(ENDPOINT, json=first_payload, headers=_auth_header())
     assert first.status_code == 200
-    body = first.json()
-    assert body == {"display": "5", "entering": True}
+    assert first.json()["display"] == "4."
 
-    second = _entry(client, auth_headers, body["display"], body["entering"], "2")
+    second = client.post(ENDPOINT, json=first.json(), headers=_auth_header())
     assert second.status_code == 200
-    assert second.json()["display"] == "52"
+    assert second.json()["display"] == "4"
 
 
-def test_ac009_decimal_then_digit(client, auth_headers):
-    dot = _entry(client, auth_headers, "12", True, ".")
-    assert dot.json()["display"] == "12."
-    five = _entry(client, auth_headers, "12.", True, "5")
-    assert five.json()["display"] == "12.5"
+def test_ac015_backspace_edits_completed_result_as_new_entry():
+    completed = {
+        "display": "20",
+        "acc": None,
+        "op": None,
+        "entering": False,
+        "error": False,
+    }
+    response = client.post(ENDPOINT, json=completed, headers=_auth_header())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["display"] == "2"
+    # the shown result is now being edited as a fresh entry
+    assert body["entering"] is True
+    assert body["error"] is False
 
 
-def test_ac010_second_decimal_unchanged(client, auth_headers):
-    resp = _entry(client, auth_headers, "12.5", True, ".")
-    assert resp.status_code == 200
-    assert resp.json()["display"] == "12.5"
+def test_backspace_is_noop_in_error_state():
+    error_state = {
+        "display": "Error",
+        "acc": None,
+        "op": None,
+        "entering": False,
+        "error": True,
+    }
+    response = client.post(ENDPOINT, json=error_state, headers=_auth_header())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["display"] == "Error"
+    assert body["error"] is True
 
 
-def test_ac011_decimal_first_shows_zero_point(client, auth_headers):
-    resp = _entry(client, auth_headers, "0", False, ".")
-    assert resp.status_code == 200
-    assert resp.json() == {"display": "0.", "entering": True}
+def test_requires_authentication():
+    payload = {"display": "123"}
+    response = client.post(ENDPOINT, json=payload)
+    assert response.status_code == 401
 
 
-def test_requires_authentication(client):
-    resp = client.post(
-        ENDPOINT,
-        json={"display": "0", "entering": False, "key": "5"},
-    )
-    assert resp.status_code == 401
+def test_rejects_invalid_token():
+    payload = {"display": "123"}
+    headers = {"Authorization": "Bearer not-a-real-token"}
+    response = client.post(ENDPOINT, json=payload, headers=headers)
+    assert response.status_code == 401
 
 
-def test_rejects_invalid_token(client):
-    resp = client.post(
-        ENDPOINT,
-        headers={"Authorization": "Bearer not.a.valid.token"},
-        json={"display": "0", "entering": False, "key": "5"},
-    )
-    assert resp.status_code == 401
-
-
-def test_unsupported_key_returns_422(client, auth_headers):
-    resp = _entry(client, auth_headers, "0", False, "+")
-    assert resp.status_code == 422
-
-
-def test_missing_key_field_returns_422(client, auth_headers):
-    resp = client.post(
-        ENDPOINT,
-        headers=auth_headers,
-        json={"display": "0", "entering": False},
-    )
-    assert resp.status_code == 422
+def test_rejects_invalid_body():
+    payload = {"display": 123, "entering": "maybe"}
+    response = client.post(ENDPOINT, json=payload, headers=_auth_header())
+    assert response.status_code == 422

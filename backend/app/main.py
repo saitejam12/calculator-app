@@ -1,12 +1,11 @@
+import logging
+
 from fastapi import FastAPI
 
 from app.routers import calculator
 
+logging.basicConfig(level=logging.INFO)
 
-def create_app() -> FastAPI:
-    app = FastAPI(title="Desk Machine Calculator API")
-    app.include_router(calculator.router)
-    return app
+app = FastAPI(title="Desk Machine Calculator API")
 
-
-app = create_app()
+app.include_router(calculator.router, prefix="/api/v1")

@@ -1,27 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+from typing import Any, Dict
 
-from app.auth import require_auth
-from app.schemas import EntryRequest, EntryResponse
-from app.services import entry as entry_service
+from fastapi import APIRouter, Depends
 
-router = APIRouter(prefix="/api/v1/calculator", tags=["calculator"])
+from app.core.security import get_current_user
+from app.schemas.calculator import CalculatorState
+from app.services import calculator as calculator_service
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/calculator", tags=["calculator"])
 
 
-@router.post("/entry", response_model=EntryResponse)
-async def post_entry(
-    payload: EntryRequest,
-    _claims: dict = Depends(require_auth),
-) -> EntryResponse:
-    """Apply one digit or decimal-point keypress to the display entry."""
-    state = entry_service.EntryState(
-        display=payload.display,
-        entering=payload.entering,
-    )
-    try:
-        result = entry_service.apply_entry(state, payload.key)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        )
-    return EntryResponse(display=result.display, entering=result.entering)
+@router.post("/backspace", response_model=CalculatorState)
+async def backspace(
+    state: CalculatorState,
+    _user: Dict[str, Any] = Depends(get_current_user),
+) -> CalculatorState:
+    """Delete the last character of the current entry and return the new state."""
+    return await calculator_service.backspace(state)

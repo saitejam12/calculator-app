@@ -6,13 +6,28 @@ import { brand } from "@/lib/brand";
 
 const { X } = Icons;
 
-const INITIAL = { display: "0", acc: null, op: null, entering: false, error: false };
+type State = {
+  display: string;
+  acc: number | null;
+  op: string | null;
+  entering: boolean;
+  error: boolean;
+};
 
-const ERROR_STATE = { display: "Error", acc: null, op: null, entering: false, error: true };
+type Key = {
+  id: string;
+  label: string;
+  kind: "clear" | "util" | "op" | "digit" | "eq";
+  aria?: string;
+};
+
+const INITIAL: State = { display: "0", acc: null, op: null, entering: false, error: false };
+
+const ERROR_STATE: State = { display: "Error", acc: null, op: null, entering: false, error: true };
 
 const MAX_DIGITS = 12;
 
-const KEYS = [
+const KEYS: Key[] = [
   { id: "C", label: "C", kind: "clear", aria: "Clear" },
   { id: "±", label: "+/−", kind: "util", aria: "Flip sign" },
   { id: "%", label: "%", kind: "util", aria: "Percent" },
@@ -39,7 +54,7 @@ const KEYS = [
   { id: "=", label: "=", kind: "eq", aria: "Equals" },
 ];
 
-const KEY_STYLES = {
+const KEY_STYLES: Record<Key["kind"], React.CSSProperties> = {
   digit: { backgroundColor: "#FCFAF4", color: "#2A2620", boxShadow: "0 3px 0 #CEC5B1" },
   util: { backgroundColor: "#DCD4C2", color: "#494334", boxShadow: "0 3px 0 #BCB29D" },
   op: { backgroundColor: "#F2E1D8", color: "#ab4726", boxShadow: "0 3px 0 #D8BCAE" },
@@ -73,21 +88,21 @@ const SHORTCUTS = [
   { keys: "Escape", does: "Clear everything" },
 ];
 
-function toNumber(s) {
+function toNumber(s: string): number {
   const n = parseFloat(s);
   return isFinite(n) ? n : 0;
 }
 
-function isBad(n) {
+function isBad(n: number): boolean {
   return typeof n !== "number" || !isFinite(n) || isNaN(n);
 }
 
-function formatValue(n) {
+function formatValue(n: number): string {
   if (isBad(n)) return "Error";
   if (n === 0) return "0";
   const abs = Math.abs(n);
   if (abs >= 1e12 || abs < 1e-9) {
-    let s = n.toExponential(6);
+    const s = n.toExponential(6);
     let [m, e] = s.split("e");
     if (m.indexOf(".") !== -1) m = m.replace(/0+$/, "").replace(/\.$/, "");
     const sign = e[0] === "-" ? "-" : "+";
@@ -99,7 +114,7 @@ function formatValue(n) {
   return s;
 }
 
-function applyOp(a, b, op) {
+function applyOp(a: number, b: number, op: string | null): number {
   switch (op) {
     case "+": return a + b;
     case "−": return a - b;
@@ -109,11 +124,11 @@ function applyOp(a, b, op) {
   }
 }
 
-function countDigits(s) {
+function countDigits(s: string): number {
   return (s.match(/[0-9]/g) || []).length;
 }
 
-function reduce(st, key) {
+function reduce(st: State, key: string): State {
   if (key === "C") return { ...INITIAL };
   if (st.error) return st;
 
@@ -145,7 +160,7 @@ function reduce(st, key) {
 
   if (key === "%") {
     const cur = toNumber(st.display);
-    let v;
+    let v: number;
     if ((st.op === "+" || st.op === "−") && st.acc !== null) v = (st.acc * cur) / 100;
     else v = cur / 100;
     if (isBad(v)) return { ...ERROR_STATE };
@@ -172,17 +187,17 @@ function reduce(st, key) {
   return st;
 }
 
-const KEYBOARD_MAP = {
+const KEYBOARD_MAP: Record<string, string> = {
   "+": "+", "-": "−", "*": "×", "x": "×", "X": "×", "/": "÷",
   "Enter": "=", "=": "=", "Backspace": "⌫", "Escape": "C", "%": "%",
   ".": ".", ",": ".",
 };
 
 export default function Screen() {
-  const [st, setSt] = React.useState(INITIAL);
-  const [flash, setFlash] = React.useState(null);
+  const [st, setSt] = React.useState<State>(INITIAL);
+  const [flash, setFlash] = React.useState<{ key: string } | null>(null);
 
-  const press = React.useCallback((key) => {
+  const press = React.useCallback((key: string) => {
     setSt((prev) => reduce(prev, key));
     setFlash({ key });
   }, []);
@@ -194,13 +209,14 @@ export default function Screen() {
   }, [flash]);
 
   React.useEffect(() => {
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      let key = null;
+      let key: string | null = null;
       if (e.key >= "0" && e.key <= "9" && e.key.length === 1) key = e.key;
       else if (KEYBOARD_MAP[e.key]) key = KEYBOARD_MAP[e.key];
       if (!key) return;
-      const tag = e.target && e.target.tagName;
+      const target = e.target as HTMLElement | null;
+      const tag = target && target.tagName;
       if (tag === "BUTTON" && (e.key === "Enter" || e.key === " ")) return;
       e.preventDefault();
       press(key);
@@ -365,3 +381,7 @@ export default function Screen() {
     </div>
   );
 }
+
+// Referenced to preserve the approved imports without changing behaviour.
+void UI;
+void X;
