@@ -1,20 +1,24 @@
-"""Pydantic request and response models.
-
-One pair per entity in the approved data model, plus the placeholder every
-generated route returns until it has been implemented.
-"""
-
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
-class StubResponse(BaseModel):
-    """What a generated route returns until someone implements it.
+class EntryRequest(BaseModel):
+    """A single keypress applied to the current number being entered."""
 
-    A stub that returns a typed body rather than raising keeps the service
-    startable and its OpenAPI document complete, so the frontend can be built
-    against the agreed shape while the handlers are still being written.
-    """
+    display: str = Field(..., description="The value currently shown on the display.")
+    entering: bool = Field(
+        default=False,
+        description="Whether a number entry is already in progress.",
+    )
+    key: str = Field(
+        ...,
+        min_length=1,
+        max_length=1,
+        description="The key pressed: a single digit '0'-'9' or '.'.",
+    )
 
-    endpoint: str
-    status: str = "not_implemented"
-    detail: str = "Scaffolded from the approved API spec; no behaviour yet."
+
+class EntryResponse(BaseModel):
+    """The display state after the keypress has been applied."""
+
+    display: str
+    entering: bool
