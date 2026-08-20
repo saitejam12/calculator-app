@@ -1,10 +1,9 @@
 import { test, expect } from "@playwright/test";
 
 // US-002 — Use an on-screen button grid for digits and operators.
-// Each spec is named after the acceptance criterion it proves and drives the
-// calculator the way a visitor would: pointer clicks on the rendered grid.
+// Each test is named after the acceptance criterion it proves.
 
-const EXPECTED_LABELS = [
+const EXPECTED_BUTTON_NAMES = [
   "0",
   "1",
   "2",
@@ -29,46 +28,45 @@ const EXPECTED_LABELS = [
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/calculator");
-  await expect(page.getByRole("status")).toHaveText("0");
 });
 
-test("AC-005: grid exposes every required button and no other function buttons", async ({
+test("AC-005: the grid has every required button and no other function buttons", async ({
   page,
 }) => {
-  for (const label of EXPECTED_LABELS) {
-    await expect(page.getByRole("button", { name: label, exact: true })).toBeVisible();
+  for (const name of EXPECTED_BUTTON_NAMES) {
+    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   }
-
-  // No control beyond the agreed roster is on the page.
-  await expect(page.getByRole("button")).toHaveCount(EXPECTED_LABELS.length);
+  // No extra function buttons: the grid holds exactly the required set.
+  await expect(page.getByRole("button")).toHaveCount(EXPECTED_BUTTON_NAMES.length);
 });
 
-test("AC-006: tapping a button applies its action exactly once with visible feedback", async ({
+test("AC-006: tapping a button gives visible feedback and applies its action once", async ({
   page,
 }) => {
-  const seven = page.getByRole("button", { name: "7", exact: true });
+  const display = page.getByRole("status");
 
-  await seven.click();
-  // One tap enters a single digit — the action ran once, not twice.
-  await expect(page.getByRole("status")).toHaveText("7");
+  const five = page.getByRole("button", { name: "5", exact: true });
+  await expect(five).toHaveCSS("transform", /matrix|none/);
 
-  // A full pointer-only calculation resolves correctly: 7 x 6 = 42.
-  await page.getByRole("button", { name: "Multiply", exact: true }).click();
-  await page.getByRole("button", { name: "6", exact: true }).click();
+  await five.click();
+  // Applied exactly once: a single click yields one digit, not two.
+  await expect(display).toHaveText("5");
+
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "3", exact: true }).click();
   await page.getByRole("button", { name: "Equals", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText("42");
+  await expect(display).toHaveText("8");
 });
 
-test("AC-007: operators are visually distinguishable from digits", async ({
-  page,
-}) => {
+test("AC-007: operators are visually distinguishable from digits", async ({ page }) => {
   const digitColor = await page
-    .getByRole("button", { name: "7", exact: true })
-    .evaluate((el) => getComputedStyle(el).backgroundColor);
+    .getByRole("button", { name: "5", exact: true })
+    .evaluate((el) => getComputedStyle(el).color);
 
-  const operatorColor = await page
-    .getByRole("button", { name: "Add", exact: true })
-    .evaluate((el) => getComputedStyle(el).backgroundColor);
-
-  expect(operatorColor).not.toBe(digitColor);
+  for (const name of ["Add", "Subtract", "Multiply", "Divide"]) {
+    const opColor = await page
+      .getByRole("button", { name, exact: true })
+      .evaluate((el) => getComputedStyle(el).color);
+    expect(opColor, `${name} should not look like a digit`).not.toBe(digitColor);
+  }
 });

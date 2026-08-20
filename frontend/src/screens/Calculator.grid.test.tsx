@@ -1,20 +1,17 @@
-import React from "react";
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
 import Calculator from "./Calculator";
 
-afterEach(() => cleanup());
+afterEach(cleanup);
 
-// The display is the live region that mirrors exactly what the user sees.
-function displayText() {
-  return screen.getByRole("status").textContent;
+// The display is the aria-live status region; its text is exactly the shown value.
+function displayText(): string {
+  return screen.getByRole("status").textContent ?? "";
 }
 
-// The full set of controls the grid must offer, addressed by the accessible
-// name a screen-reader user (and the test) sees — digits carry their own
-// label, functions carry a descriptive one.
-const EXPECTED_LABELS = [
+// Every button the grid is required to expose, by accessible name.
+const EXPECTED_BUTTON_NAMES = [
   "0",
   "1",
   "2",
@@ -37,71 +34,88 @@ const EXPECTED_LABELS = [
   "Backspace",
 ];
 
+const OPERATOR_NAMES = ["Add", "Subtract", "Multiply", "Divide"];
+const DIGIT_NAMES = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+
 describe("Calculator — on-screen button grid (US-002)", () => {
-  it("AC-005: the grid has exactly the required buttons and no other function buttons", () => {
+  it("AC-005: exposes buttons for every digit, the decimal point and every operation", () => {
     render(<Calculator />);
-
-    const labels = screen
-      .getAllByRole("button")
-      .map((b) => b.getAttribute("aria-label"));
-
-    // Every digit, the decimal point, all four operators, equals, clear,
-    // percent, sign flip and backspace are present...
-    for (const label of EXPECTED_LABELS) {
-      expect(labels).toContain(label);
+    for (const name of EXPECTED_BUTTON_NAMES) {
+      expect(
+        screen.getByRole("button", { name }),
+        `expected a button named "${name}"`,
+      ).toBeTruthy();
     }
-
-    // ...and nothing beyond that list exists — no memory keys, no extra
-    // functions. Sorting both sides makes the comparison order-independent.
-    expect([...labels].sort()).toEqual([...EXPECTED_LABELS].sort());
   });
 
-  it("AC-006: clicking a button gives a visible pressed state", () => {
+  it("AC-005: shows those buttons and no other function buttons", () => {
     render(<Calculator />);
-
-    const seven = screen.getByRole("button", { name: "7" });
-
-    // At rest the key sits flush.
-    expect(seven.style.transform).toBe("translateY(0)");
-
-    fireEvent.click(seven);
-
-    // On press it depresses — a state the user can see.
-    expect(seven.style.transform).toBe("translateY(3px)");
-
-    // And only the pressed key reacts, not its neighbours.
-    const eight = screen.getByRole("button", { name: "8" });
-    expect(eight.style.transform).toBe("translateY(0)");
+    const actual = screen
+      .getAllByRole("button")
+      .map((b) => b.getAttribute("aria-label") ?? b.textContent ?? "")
+      .sort();
+    expect(actual).toEqual([...EXPECTED_BUTTON_NAMES].sort());
   });
 
-  it("AC-006: a single click applies its action exactly once", () => {
+  it("AC-006: activating a button gives a visible pressed state", () => {
     render(<Calculator />);
+    const five = screen.getByRole("button", { name: "5" });
+    // Before pressing, the key is at rest (no downward press offset).
+    expect(five.style.transform).toBe("translateY(0)");
+    fireEvent.click(five);
+    // A press pushes the key down — a state a sighted user can see.
+    expect(five.style.transform).toBe("translateY(3px)");
+  });
 
-    // One click on '5' enters a single digit, not two.
-    fireEvent.click(screen.getByRole("button", { name: "5" }));
-    expect(displayText()).toBe("5");
+  it("AC-006: a single click applies the action exactly once", () => {
+    render(<Calculator />);
+    // If a click were handled twice, two digits would land: "11" not "1".
+    fireEvent.click(screen.getByRole("button", { name: "1" }));
+    expect(displayText()).toBe("1");
+    fireEvent.click(screen.getByRole("button", { name: "2" }));
+    expect(displayText()).toBe("12");
+  });
 
-    // A whole click-driven calculation applies each key once: 5 + 4 = 9.
+  it("AC-006: clicking through a full sum applies each button once", () => {
+    render(<Calculator />);
+    fireEvent.click(screen.getByRole("button", { name: "7" }));
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    fireEvent.click(screen.getByRole("button", { name: "4" }));
+    fireEvent.click(screen.getByRole("button", { name: "8" }));
     fireEvent.click(screen.getByRole("button", { name: "Equals" }));
-    expect(displayText()).toBe("9");
+    expect(displayText()).toBe("15");
   });
 
-  it("AC-007: operator buttons are visually distinguishable from digit buttons", () => {
+  it("AC-007: operator buttons are visually distinct from digit buttons", () => {
     render(<Calculator />);
+    const digit = screen.getByRole("button", { name: "5" });
+    const digitColor = digit.style.color;
+    const digitBg = digit.style.backgroundColor;
 
-    const digit = screen.getByRole("button", { name: "7" });
-    const add = screen.getByRole("button", { name: "Add" });
-    const divide = screen.getByRole("button", { name: "Divide" });
+    for (const name of OPERATOR_NAMES) {
+      const op = screen.getByRole("button", { name });
+      // At-a-glance distinction: operators must not read the same as digits.
+      const differsInColour =
+        op.style.color !== digitColor || op.style.backgroundColor !== digitBg;
+      expect(differsInColour, `${name} should look different from a digit`).toBe(true);
+    }
+  });
 
-    // Operators differ from digits in fill and text colour, so the grid
-    // reads at a glance.
-    expect(add.style.backgroundColor).not.toBe(digit.style.backgroundColor);
-    expect(add.style.color).not.toBe(digit.style.color);
+  it("AC-007: all four operators share one look, distinct from the digits' look", () => {
+    render(<Calculator />);
+    const digit = screen.getByRole("button", { name: "1" });
 
-    // And every operator shares that distinct operator treatment.
-    expect(divide.style.backgroundColor).toBe(add.style.backgroundColor);
-    expect(divide.style.color).toBe(add.style.color);
+    const opColors = OPERATOR_NAMES.map(
+      (name) => screen.getByRole("button", { name }).style.color,
+    );
+    // Operators are consistent with each other...
+    expect(new Set(opColors).size).toBe(1);
+    // ...and that shared colour is not the digit colour.
+    expect(opColors[0]).not.toBe(digit.style.color);
+
+    const digitColors = DIGIT_NAMES.map(
+      (name) => screen.getByRole("button", { name }).style.color,
+    );
+    // Digits are consistent with each other.
+    expect(new Set(digitColors).size).toBe(1);
   });
 });

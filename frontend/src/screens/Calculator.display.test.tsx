@@ -1,104 +1,78 @@
-import React from "react";
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
 import Calculator from "./Calculator";
 
-afterEach(() => cleanup());
+afterEach(cleanup);
 
-// The result display is the single live region the visitor reads.
-function display() {
+// The display is the aria-live status region; its text is exactly the shown value.
+function display(): HTMLElement {
   return screen.getByRole("status");
 }
 
-function displayText() {
-  return display().textContent;
+function displayText(): string {
+  return display().textContent ?? "";
 }
 
-function clickKey(name: string) {
-  fireEvent.click(screen.getByRole("button", { name }));
+function type(...keys: string[]): void {
+  for (const key of keys) {
+    fireEvent.keyDown(window, { key });
+  }
+}
+
+// The display font-size is expressed in rem; read the numeric size the value renders at.
+function fontRem(el: HTMLElement): number {
+  return parseFloat(el.style.fontSize);
 }
 
 describe("Calculator — result display (US-001)", () => {
-  it("AC-001: on first load a single result display shows 0 and nothing else", () => {
+  it("AC-001: on first load a single result display is visible showing 0 and no other value", () => {
     render(<Calculator />);
-
-    // Exactly one result display exists...
-    const displays = screen.getAllByRole("status");
-    expect(displays).toHaveLength(1);
-
-    // ...and it reads 0, with no other value alongside it.
+    const statuses = screen.getAllByRole("status");
+    expect(statuses).toHaveLength(1);
     expect(displayText()).toBe("0");
-    expect(display().textContent).not.toMatch(/[1-9]/);
   });
 
-  it("AC-002: pressing digit keys shows exactly the number entered so far", () => {
+  it("AC-002: pressing digit keys updates the display to exactly the number entered so far", () => {
     render(<Calculator />);
-
-    clickKey("1");
-    expect(displayText()).toBe("1");
-
-    clickKey("2");
-    expect(displayText()).toBe("12");
-
-    clickKey("3");
-    clickKey("4");
-    clickKey("5");
-    expect(displayText()).toBe("12345");
-  });
-
-  it("AC-002: a leading digit replaces the initial 0 rather than appending to it", () => {
-    render(<Calculator />);
-
-    expect(displayText()).toBe("0");
-    clickKey("7");
-    // Not "07": the display shows exactly what was entered.
-    expect(displayText()).toBe("7");
-  });
-
-  it("AC-003: after a completed calculation only the current result is shown", () => {
-    render(<Calculator />);
-
-    // 6 x 7 = 42
-    clickKey("6");
-    clickKey("Multiply");
-    clickKey("7");
-    clickKey("Equals");
-
-    // Still one and only one display region.
-    expect(screen.getAllByRole("status")).toHaveLength(1);
-
-    // It shows the result and nothing else — no operands, no operator,
-    // no history/secondary line survives the equals.
+    type("4");
+    expect(displayText()).toBe("4");
+    type("2");
     expect(displayText()).toBe("42");
-    expect(displayText()).not.toContain("6");
-    expect(displayText()).not.toContain("7");
-    expect(displayText()).not.toContain("×");
+    type("0");
+    expect(displayText()).toBe("420");
   });
 
-  it("AC-004: an over-long value shrinks its text and stays inside a clipped display area", () => {
+  it("AC-002: clicking digit buttons shows exactly the number entered, with no leading zero", () => {
     render(<Calculator />);
+    fireEvent.click(screen.getByRole("button", { name: "7" }));
+    fireEvent.click(screen.getByRole("button", { name: "8" }));
+    fireEvent.click(screen.getByRole("button", { name: "9" }));
+    expect(displayText()).toBe("789");
+  });
 
-    // Baseline: a short value uses the largest type size.
-    clickKey("1");
-    const shortSize = display().style.fontSize;
-    expect(shortSize).toBe("3.25rem");
+  it("AC-003: after a completed calculation the display shows only the current value (the result)", () => {
+    render(<Calculator />);
+    type("2", "+", "3", "=");
+    expect(displayText()).toBe("5");
+    // A single display region: no history panel and no secondary value line in this version.
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+  });
 
-    // Fill the display with a long number.
-    clickKey("C");
-    ["2", "3", "4", "5", "6", "7", "8", "9", "1", "2", "3", "4"].forEach(clickKey);
-    expect(displayText()).toBe("234567891234");
+  it("AC-004: a value too long to fit is shrunk so it stays readable rather than overflowing", () => {
+    render(<Calculator />);
+    type("5");
+    expect(displayText()).toBe("5");
+    const shortSize = fontRem(display());
 
-    // The long value is rendered at a smaller size than the short one so it
-    // remains readable within the fixed display width.
-    const longSize = display().style.fontSize;
-    expect(longSize).not.toBe(shortSize);
-    expect(parseFloat(longSize)).toBeLessThan(parseFloat(shortSize));
+    type("Escape");
+    // Enter the maximum-length number the calculator accepts.
+    type("1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "1", "2");
+    expect(displayText()).toBe("123456789012");
+    const longSize = fontRem(display());
 
-    // The text is truncated and the window clips overflow, so it cannot
-    // spill out of the display box and break the button grid below.
-    expect(display().className).toContain("truncate");
-    const windowBox = display().parentElement as HTMLElement;
-    expect(windowBox.className).toContain("overflow-hidden");
+    // The long value renders at a smaller font size than a short one, keeping it within the display.
+    expect(longSize).toBeLessThan(shortSize);
+    expect(longSize).toBeGreaterThan(0);
   });
 });

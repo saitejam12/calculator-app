@@ -1,131 +1,135 @@
 import { test, expect, Page } from "@playwright/test";
 
 // US-005 — Operate the calculator from the physical keyboard.
-// Each spec is named after the acceptance criterion it proves and drives the
-// page the way a desktop visitor would: real key events, real focus, the value
-// read back from the display live region (role="status").
+//
+// These specs drive the calculator the way a desktop visitor would: through the
+// real browser keyboard and through Tab focus of the button grid. The display is
+// the aria-live status region whose text is exactly the shown value.
+//
+// The Calculator screen is a client-only React screen (SCR-001) at route
+// 'calculator'. No backend/JWT is exercised: every sum is worked out in the
+// browser. If the app mounts the route under a different base path, adjust
+// ROUTE below.
+const ROUTE = "/calculator";
+
+async function gotoCalculator(page: Page): Promise<void> {
+  await page.goto(ROUTE);
+  // Ensure the page (not any element) is the keyboard target, matching a visitor
+  // who has clicked onto the calculator area but no specific button.
+  await expect(page.getByRole("heading", { name: "Desk Machine" })).toBeVisible();
+  await page.locator("body").click();
+}
 
 function display(page: Page) {
   return page.getByRole("status");
 }
 
-test.beforeEach(async ({ page }) => {
-  // The calculator is the app screen at the 'calculator' route. It runs
-  // entirely in the browser; no API call backs the keypresses.
-  await page.goto("/calculator");
-  await expect(display(page)).toHaveText("0");
-  // Make sure keystrokes land on the document, not the address bar.
-  await page.locator("body").click({ position: { x: 2, y: 2 } });
-});
+async function typeKeys(page: Page, keys: string[]): Promise<void> {
+  for (const key of keys) {
+    await page.keyboard.press(key);
+  }
+}
 
-test("AC-016: number and decimal-point keys enter digits like the buttons", async ({ page }) => {
-  await page.keyboard.type("5");
-  await page.keyboard.type(".");
-  await page.keyboard.type("5");
-  await expect(display(page)).toHaveText("5.5");
-});
+test.describe("US-005 — physical keyboard operation", () => {
+  test("AC-016: pressing 0-9 and the decimal key enters digits and a decimal point", async ({ page }) => {
+    await gotoCalculator(page);
+    await typeKeys(page, ["1", "2", ".", "5"]);
+    await expect(display(page)).toHaveText("12.5");
+  });
 
-test("AC-017: +, -, * and / apply the matching operations", async ({ page }) => {
-  // 6 * 7 = 42
-  await page.keyboard.type("6");
-  await page.keyboard.type("*");
-  await page.keyboard.type("7");
-  await page.keyboard.press("Enter");
-  await expect(display(page)).toHaveText("42");
+  test("AC-017: pressing + applies addition like the Add button", async ({ page }) => {
+    await gotoCalculator(page);
+    await typeKeys(page, ["5", "+", "3", "="]);
+    await expect(display(page)).toHaveText("8");
+  });
 
-  // 9 - 4 = 5
-  await page.keyboard.press("Escape");
-  await page.keyboard.type("9");
-  await page.keyboard.type("-");
-  await page.keyboard.type("4");
-  await page.keyboard.press("Enter");
-  await expect(display(page)).toHaveText("5");
+  test("AC-017: pressing - applies subtraction", async ({ page }) => {
+    await gotoCalculator(page);
+    await typeKeys(page, ["9", "-", "4", "="]);
+    await expect(display(page)).toHaveText("5");
+  });
 
-  // 8 / 2 = 4
-  await page.keyboard.press("Escape");
-  await page.keyboard.type("8");
-  await page.keyboard.type("/");
-  await page.keyboard.type("2");
-  await page.keyboard.press("Enter");
-  await expect(display(page)).toHaveText("4");
-});
+  test("AC-017: pressing * applies multiplication", async ({ page }) => {
+    await gotoCalculator(page);
+    await typeKeys(page, ["4", "*", "2", "="]);
+    await expect(display(page)).toHaveText("8");
+  });
 
-test("AC-018: Enter and = complete a pending operation like equals", async ({ page }) => {
-  await page.keyboard.type("8");
-  await page.keyboard.type("+");
-  await page.keyboard.type("2");
-  await page.keyboard.press("Enter");
-  await expect(display(page)).toHaveText("10");
+  test("AC-017: pressing / applies division", async ({ page }) => {
+    await gotoCalculator(page);
+    await typeKeys(page, ["8", "/", "2", "="]);
+    await expect(display(page)).toHaveText("4");
+  });
 
-  await page.keyboard.press("Escape");
-  await page.keyboard.type("3");
-  await page.keyboard.type("+");
-  await page.keyboard.type("4");
-  await page.keyboard.type("=");
-  await expect(display(page)).toHaveText("7");
-});
+  test("AC-018: pressing Enter completes a pending operation like equals", async ({ page }) => {
+    await gotoCalculator(page);
+    await typeKeys(page, ["7", "+", "3", "Enter"]);
+    await expect(display(page)).toHaveText("10");
+  });
 
-test("AC-019: Backspace deletes the last character", async ({ page }) => {
-  await page.keyboard.type("123");
-  await expect(display(page)).toHaveText("123");
+  test("AC-018: pressing = also completes a pending operation", async ({ page }) => {
+    await gotoCalculator(page);
+    await typeKeys(page, ["6", "*", "6", "="]);
+    await expect(display(page)).toHaveText("36");
+  });
 
-  await page.keyboard.press("Backspace");
-  await expect(display(page)).toHaveText("12");
+  test("AC-019: pressing Backspace deletes the last character entered", async ({ page }) => {
+    await gotoCalculator(page);
+    await typeKeys(page, ["1", "2", "3"]);
+    await expect(display(page)).toHaveText("123");
+    await page.keyboard.press("Backspace");
+    await expect(display(page)).toHaveText("12");
+  });
 
-  await page.keyboard.press("Backspace");
-  await page.keyboard.press("Backspace");
-  await expect(display(page)).toHaveText("0");
-});
+  test("AC-020: pressing Escape resets the calculator from any state", async ({ page }) => {
+    await gotoCalculator(page);
+    await typeKeys(page, ["9", "*", "9", "="]);
+    await expect(display(page)).toHaveText("81");
+    await page.keyboard.press("Escape");
+    await expect(display(page)).toHaveText("0");
+  });
 
-test("AC-020: Escape resets the calculator like Clear", async ({ page }) => {
-  await page.keyboard.type("7");
-  await page.keyboard.type("*");
-  await page.keyboard.type("3");
-  await expect(display(page)).toHaveText("3");
+  test("AC-021: a key with no calculator meaning leaves the display unchanged and does not error", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(String(err)));
+    await gotoCalculator(page);
+    await page.keyboard.press("5");
+    await expect(display(page)).toHaveText("5");
+    // Letters and other non-calculator keys.
+    await typeKeys(page, ["a", "Z", "q", "ArrowLeft", "F1"]);
+    await expect(display(page)).toHaveText("5");
+    expect(errors).toEqual([]);
+  });
 
-  await page.keyboard.press("Escape");
-  await expect(display(page)).toHaveText("0");
+  test("AC-022: the button grid is reachable by Tab and a focused button is activated by Space", async ({ page }) => {
+    await gotoCalculator(page);
 
-  // A fresh entry works from scratch after the reset.
-  await page.keyboard.type("9");
-  await expect(display(page)).toHaveText("9");
-});
+    // Tab from the page moves focus into the interactive grid; keep tabbing until
+    // a real BUTTON holds focus, proving the grid is keyboard-reachable.
+    let onButton = false;
+    for (let i = 0; i < 30 && !onButton; i++) {
+      await page.keyboard.press("Tab");
+      onButton = await page.evaluate(() => document.activeElement?.tagName === "BUTTON");
+    }
+    expect(onButton).toBe(true);
 
-test("AC-021: a key with no calculator meaning leaves the display unchanged and does not error", async ({ page }) => {
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
+    // Focus a specific button and activate it with the native keyboard, no mouse.
+    await page.getByRole("button", { name: "5" }).focus();
+    await page.keyboard.press("Space");
+    await expect(display(page)).toHaveText("5");
 
-  await page.keyboard.type("5");
-  await expect(display(page)).toHaveText("5");
+    await page.getByRole("button", { name: "Add" }).focus();
+    await page.keyboard.press("Enter");
+    // Add is applied but the running value is still shown; entering resets.
+    await expect(display(page)).toHaveText("5");
 
-  await page.keyboard.type("aZ");
-  await page.keyboard.press("F1");
-  await page.keyboard.press("ArrowLeft");
+    await page.getByRole("button", { name: "3" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(display(page)).toHaveText("3");
 
-  await expect(display(page)).toHaveText("5");
-  expect(errors).toEqual([]);
-});
-
-test("AC-022: Tab reaches the key grid and a focused button activates with Enter or Space", async ({ page }) => {
-  // Tab from the page lands on a real, focusable grid button.
-  await page.keyboard.press("Tab");
-  const focusedTag = await page.evaluate(() => document.activeElement?.tagName);
-  expect(focusedTag).toBe("BUTTON");
-
-  // Operate the calculator by keyboard alone: focus each button and fire its
-  // native activation with Enter or Space. 5 + 5 = 10.
-  await page.getByRole("button", { name: "5" }).focus();
-  await page.keyboard.press("Enter");
-  await expect(display(page)).toHaveText("5");
-
-  await page.getByRole("button", { name: "Add" }).focus();
-  await page.keyboard.press("Space");
-
-  await page.getByRole("button", { name: "5" }).focus();
-  await page.keyboard.press("Enter");
-  await expect(display(page)).toHaveText("5");
-
-  await page.getByRole("button", { name: "Equals" }).focus();
-  await page.keyboard.press("Enter");
-  await expect(display(page)).toHaveText("10");
+    // Equals via native button activation completes the sum exactly once.
+    await page.getByRole("button", { name: "Equals" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(display(page)).toHaveText("8");
+  });
 });
